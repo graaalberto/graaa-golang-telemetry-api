@@ -1,5 +1,13 @@
 Ingestão de Telemetria IoT & GPS em Alta Frequência (graaa-golang-telemetry-api).
 
+## Configuração de segurança
+
+- `TELEMETRY_DEVICE_KEYS` é obrigatório e deve ser um objeto JSON com uma chave aleatória (mínimo 32 bytes) por IMEI, por exemplo `{"IMEI_EXEMPLO":"substituir-por-segredo-aleatorio-de-32-bytes"}`. Configure os rastreadores para enviar o IMEI em `X-Tracker-IMEI` e a respetiva chave em `X-Tracker-Token`.
+- Cada rastreador só pode enviar pacotes para a viatura cujo `tracker_imei` corresponde à credencial. O `vehicleId` no corpo, se fornecido, tem de coincidir com essa viatura. A ingestão em lote só aceita pacotes do rastreador autenticado.
+- Defina `JWT_SECRET` igual ao auth API e com pelo menos 32 bytes para consultar histórico. Defina `FLEET_TELEMETRY_TOKEN` igual ao valor configurado na fleet API para publicar atualizações internas.
+- Defina `ALLOWED_ORIGINS` para as origens exatas da aplicação frontend; sem configuração, apenas `http://localhost:5173` é autorizado.
+- Não reutilize chaves entre dispositivos nem coloque segredos de dispositivo no repositório; use o gestor de segredos do ambiente de execução.
+
 Esta API é o coração do rastreamento da frota:
 
     Alta Performance & Baixa Latência: Recebe pacotes de GPS a cada 2 a 5 segundos de centenas de táxis e motos.

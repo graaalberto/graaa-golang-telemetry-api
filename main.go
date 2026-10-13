@@ -4,10 +4,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"frotago-telemetry-api/config"
 	"frotago-telemetry-api/handlers"
+	"frotago-telemetry-api/middleware"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -16,6 +18,13 @@ import (
 
 func main() {
 	_ = godotenv.Load()
+	ingestAuth, err := middleware.NewDeviceAuthMiddleware(os.Getenv("TELEMETRY_DEVICE_KEYS"))
+	if err != nil {
+		log.Fatalf("Configuração de autenticação de rastreadores inválida: %v", err)
+	}
+	if len(os.Getenv("JWT_SECRET")) < 32 {
+		log.Fatal("JWT_SECRET deve ter pelo menos 32 caracteres")
+	}
 
 	// Conecta com o PostgreSQL (fleet_db) e Redis
 	config.ConnectDB()
@@ -26,9 +35,18 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.Default()
+	allowedOrigins := strings.FieldsFunc(os.Getenv("ALLOWED_ORIGINS"), func(r rune) bool {
+		return r == ',' || r == ';'
+	})
+	for i := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+	}
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{"http://localhost:5173"}
+	}
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Requested-With"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -47,14 +65,17 @@ func main() {
 		})
 	})
 
-	api := r.Group("/api/telemetry")
+	ingest := r.Group("/api/telemetry")
+	ingest.Use(ingestAuth)
 	{
-		// Rotas de Ingestão IoT
-		api.POST("/ingest", handlers.IngestSinglePacket)
-		api.POST("/ingest/batch", handlers.IngestBatchPackets)
+		ingest.POST("/ingest", handlers.IngestSinglePacket)
+		ingest.POST("/ingest/batch", handlers.IngestBatchPackets)
+	}
 
-		// Histórico e Trajetos
-		api.GET("/history/:vehicleId", handlers.GetVehicleHistory)
+	history := r.Group("/api/telemetry")
+	history.Use(middleware.JWTAuthMiddleware(), middleware.RequireRole("admin", "member"))
+	{
+		history.GET("/history/:vehicleId", handlers.GetVehicleHistory)
 	}
 
 	port := os.Getenv("PORT")
